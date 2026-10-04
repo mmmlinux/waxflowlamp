@@ -43,3 +43,7 @@ Settings are saved in your browser. **Reset all** restores the defaults.
 | `?scale=0.5` | Fix the render resolution and turn off automatic quality |
 | `?yaw=1.2` | Start the lamp turned by this many radians |
 | `?panel` | Open the first two control groups and scroll to the controls |
+
+## License
+
+[MIT](LICENSE)
