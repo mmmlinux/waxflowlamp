@@ -31,9 +31,9 @@ Settings are saved in your browser. **Reset all** restores the defaults.
 ## How it works
 
 - **Rendering:** a WebGL fragment shader raymarches the lamp. The glass, base and cap are signed-distance solids of revolution. Rays bend as they enter the glass and pick up tint and haze from the liquid. The light comes from the bulb below the wax.
-- **Wax:** each blob is a stretched, slowly shifting lumpy ellipsoid. Blobs join the pool with a gooey neck, but blobs that touch each other meet at a tight seam unless they are fusing.
+- **Wax:** each blob is a stretched, slowly shifting lumpy ellipsoid. Blobs leaving the pool trail a gooey neck; sinking blobs settle onto the pool and melt in.
 - **Physics:** each blob has a temperature. The pool heats it, the liquid cools it (most strongly near the top), and buoyancy follows temperature. A blob leaves the pool only once it's hot enough, and leaves the top only once it's cool enough. This hysteresis gives the slow, staggered cycle.
-- **Contact and fusion:** blobs that meet press together and usually slide past. A fusion bond builds while they touch, faster when they press deeper and when their temperatures are close. Some pairs are sticky and fuse on impact. A fusing pair grows a neck, then the smaller blob drains into the larger. Big merged blobs sometimes pinch off a trailing piece, and merged wax breaks up again in the pool.
+- **Contact and fusion:** a thin film of liquid keeps blobs that meet apart, so they usually slide past. A fusion bond builds while they press against the film, faster when they press harder and when their temperatures are close (heat crosses the film only slowly). Some pairs are sticky and fuse on impact. When the film breaks the pair grows a neck, then the smaller blob drains into the larger. Big merged blobs sometimes pinch off a trailing piece, and merged wax breaks up again in the pool.
 - **Performance:** the shader renders below screen resolution and lowers resolution further when frames get slow.
 
 ## Debug URL parameters
