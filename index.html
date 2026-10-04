@@ -1,0 +1,1196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wax Flow Lamp</title>
+<meta name="theme-color" content="#0f0f11">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f0f11;
+    --ink: rgba(255, 255, 255, 0.88);
+    --muted: rgba(255, 255, 255, 0.46);
+    --faint: rgba(255, 255, 255, 0.12);
+    --line: rgba(255, 255, 255, 0.07);
+    --panel: rgba(17, 17, 21, 0.68);
+    --accent: #ff3a14;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  html { scrollbar-width: none; }
+  html::-webkit-scrollbar { display: none; }
+  #gl {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* The lamp: a full-height, text-free stage */
+  .hero {
+    position: relative;
+    height: 100vh;
+    height: 100svh;
+    touch-action: pan-y;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .hero.dragging { cursor: grabbing; }
+  .cue {
+    position: absolute;
+    left: 50%;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    opacity: 0.55;
+    cursor: pointer;
+    transition: opacity 0.3s;
+    animation: bob 3.2s ease-in-out infinite;
+  }
+  .cue:hover { opacity: 1; }
+  @keyframes bob { 50% { transform: translate(-50%, 4px); } }
+  @media (prefers-reduced-motion: reduce) { .cue { animation: none; } }
+
+  /* Controls, underneath */
+  .panel {
+    position: relative;
+    max-height: 64vh;
+    max-height: 64svh;
+    overflow-y: auto;
+    background: var(--panel);
+    -webkit-backdrop-filter: blur(22px) saturate(1.3);
+    backdrop-filter: blur(22px) saturate(1.3);
+    border-top: 1px solid var(--line);
+    border-radius: 22px 22px 0 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--faint) transparent;
+  }
+  .panel-inner {
+    max-width: 540px;
+    margin: 0 auto;
+    padding: 10px 16px max(28px, env(safe-area-inset-bottom));
+  }
+  .grabber {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--faint);
+    margin: 0 auto 6px;
+  }
+
+  details { border-bottom: 1px solid var(--line); }
+  summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px 2px;
+    cursor: pointer;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    transition: color 0.2s;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary:hover, details[open] > summary { color: var(--ink); }
+  summary svg { transition: transform 0.25s ease; }
+  details[open] > summary svg { transform: rotate(180deg); }
+  summary:focus-visible { outline: 1px solid var(--muted); outline-offset: 2px; border-radius: 6px; }
+  .group-body {
+    display: grid;
+    gap: 18px;
+    padding: 2px 2px 22px;
+  }
+
+  .row-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+  }
+  .row-head .val {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    font-size: 12.5px;
+  }
+  .row-inline {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 28px;
+  }
+
+  input[type=range] {
+    --p: 50%;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 22px;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 2px;
+    border-radius: 1px;
+    background: linear-gradient(to right, var(--accent) var(--p), var(--faint) var(--p));
+  }
+  input[type=range]::-moz-range-track { height: 2px; border-radius: 1px; background: var(--faint); }
+  input[type=range]::-moz-range-progress { height: 2px; border-radius: 1px; background: var(--accent); }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    margin-top: -6px;
+    border-radius: 50%;
+    background: #f4f4f6;
+    border: 0;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #f4f4f6;
+    border: 0;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  }
+  input[type=range]:focus-visible { outline: none; }
+  input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--faint); }
+
+  .switch {
+    position: relative;
+    width: 36px;
+    height: 21px;
+    border: 0;
+    border-radius: 11px;
+    background: var(--faint);
+    cursor: pointer;
+    transition: background 0.2s;
+    padding: 0;
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2.5px;
+    left: 2.5px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #f4f4f6;
+    transition: transform 0.2s;
+  }
+  .switch[aria-checked=true] { background: var(--accent); }
+  .switch[aria-checked=true]::after { transform: translateX(15px); }
+  .switch:focus-visible { outline: 1px solid var(--muted); outline-offset: 3px; }
+
+  input[type=color] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--faint);
+    border-radius: 50%;
+    background: none;
+    cursor: pointer;
+    overflow: hidden;
+  }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+  input[type=color]::-webkit-color-swatch { border: 0; border-radius: 50%; }
+  input[type=color]::-moz-color-swatch { border: 0; border-radius: 50%; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .chip:hover { border-color: var(--faint); background: rgba(255, 255, 255, 0.06); }
+  .chip[aria-pressed=true] { border-color: rgba(255, 255, 255, 0.35); }
+  .chip:focus-visible { outline: 1px solid var(--muted); outline-offset: 2px; }
+  .dots { display: inline-flex; }
+  .dots i {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+  }
+  .dots i + i { margin-left: -4px; }
+
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 18px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .text-btn {
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    padding: 6px 0;
+    cursor: pointer;
+  }
+  .text-btn:hover { color: var(--ink); }
+  .readout { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+
+  .err {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    pointer-events: none;
+  }
+  .err[hidden] { display: none; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<main>
+  <section class="hero" id="hero" aria-label="Wax flow lamp. Drag to turn it.">
+    <button class="cue" id="cue" aria-label="Show controls">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+  </section>
+
+  <section class="panel" id="panel" aria-label="Lamp controls">
+    <div class="panel-inner">
+      <div class="grabber"></div>
+      <div id="groups"></div>
+      <div class="footer">
+        <span>Drag the lamp to turn it</span>
+        <button class="text-btn" id="reset">Reset all</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="err" id="err" hidden></div>
+
+<script id="frag" type="x-shader/x-fragment">
+precision highp float;
+#define MAXB 16
+#define PI 3.14159265
+
+uniform vec2  uRes;
+uniform vec2  uRegion;   // x: lamp centre (px from bottom), y: lamp region height (px)
+uniform float uTime;
+uniform vec2  uRot;      // cos/sin of the wax frame's turn
+uniform float uPitch;
+uniform float uZoom;
+uniform vec4  uBlobs[MAXB];
+uniform float uStretch[MAXB];
+uniform int   uCount;
+uniform vec3  uWax;
+uniform vec3  uLiquid;
+uniform vec3  uGlow;
+uniform vec3  uMetal;
+uniform float uRough;
+uniform float uHaze;
+uniform float uBulb;
+uniform float uGoo;
+uniform float uPoolY;
+uniform float uEta;
+
+// Lamp geometry (world units, y up). Glass, base and cap are bodies of revolution.
+const float GY0 = -0.80;  const float GY1 = 1.45;
+const float BY0 = -2.00;  const float BY1 = -0.76;
+const float CY0 = 1.38;   const float CY1 = 1.95;
+const float FLOOR_Y = -2.0;
+
+float glassR(float y) {
+  float t = clamp((y - GY0) / (GY1 - GY0), 0.0, 1.0);
+  float g = t + 0.35 * t * (1.0 - t);
+  return mix(0.40, 0.24, t) + 0.22 * sin(PI * g);
+}
+float baseR(float y) {
+  float t = clamp((y - BY0) / (BY1 - BY0), 0.0, 1.0);
+  return mix(0.80, 0.43, t) - 0.06 * sin(PI * t);
+}
+float capR(float y) {
+  float t = clamp((y - CY0) / (CY1 - CY0), 0.0, 1.0);
+  return mix(0.27, 0.13, t);
+}
+
+// 2D profile distance -> rounded solid of revolution
+float roundBox2(vec2 w, float rr) {
+  return min(max(w.x, w.y), 0.0) + length(max(w, 0.0)) - rr;
+}
+
+float sdGlass(vec3 p) {
+  float r = length(p.xz);
+  float dR = (glassR(p.y + 0.01) - glassR(p.y - 0.01)) * 50.0;
+  float d = (r - glassR(p.y)) / sqrt(1.0 + dR * dR);
+  return max(d, max(GY0 - p.y, p.y - GY1));
+}
+float sdBase(vec3 p) {
+  float rr = 0.02;
+  float dR = (baseR(p.y + 0.01) - baseR(p.y - 0.01)) * 50.0;
+  vec2 w = vec2((length(p.xz) - baseR(p.y) + rr) / sqrt(1.0 + dR * dR),
+                max(BY0 + rr - p.y, p.y - BY1 + rr));
+  return roundBox2(w, rr);
+}
+float sdCap(vec3 p) {
+  float rr = 0.04;
+  float dR = (capR(p.y + 0.01) - capR(p.y - 0.01)) * 50.0;
+  vec2 w = vec2((length(p.xz) - capR(p.y) + rr) / sqrt(1.0 + dR * dR),
+                max(CY0 + rr - p.y, p.y - CY1 + rr));
+  return roundBox2(w, rr);
+}
+float sdTorus(vec3 p, vec2 t) {
+  return length(vec2(length(p.xz) - t.x, p.y)) - t.y;
+}
+float sdFoot(vec3 p) {
+  float rr = 0.015;
+  vec2 w = vec2(length(p.xz) - 0.835 + rr, max(BY0 + rr - p.y, p.y - (-1.93) + rr));
+  return roundBox2(w, rr);
+}
+
+vec2 mapLamp(vec3 p) {
+  float b = min(sdBase(p), sdFoot(p));
+  b = min(b, sdTorus(p - vec3(0.0, BY1, 0.0), vec2(0.43, 0.02)));
+  float c = min(sdCap(p), sdTorus(p - vec3(0.0, CY0, 0.0), vec2(0.272, 0.016)));
+  float g = sdGlass(p);
+  vec2 res = vec2(b, 1.0);
+  if (c < res.x) res = vec2(c, 2.0);
+  if (g < res.x) res = vec2(g, 3.0);
+  return res;
+}
+
+// ---- Wax ---------------------------------------------------------------
+float smin(float a, float b, float k) {
+  float h = max(k - abs(a - b), 0.0) / k;
+  return min(a, b) - h * h * k * 0.25;
+}
+float sdEllipsoid(vec3 p, vec3 r) {
+  float k0 = length(p / r);
+  float k1 = length(p / (r * r));
+  return k0 * (k0 - 1.0) / max(k1, 1e-4);
+}
+float waxField(vec3 p) {
+  // into the wax frame (the lamp turns; the room and its lights do not)
+  vec3 q = vec3(uRot.x * p.x - uRot.y * p.z, p.y, uRot.y * p.x + uRot.x * p.z);
+  // slow domain warp: lumpy, never-quite-round wax
+  q += vec3(0.045, 0.03, 0.045) * sin(q.yzx * vec3(5.3, 4.1, 4.7) + uTime * vec3(0.31, 0.23, 0.27));
+  float d = q.y - uPoolY - 0.012 * sin(q.x * 7.0 + uTime * 0.35) * sin(q.z * 6.0 - uTime * 0.27);
+  for (int i = 0; i < MAXB; i++) {
+    if (i >= uCount) break;
+    vec4 b = uBlobs[i];
+    float s = uStretch[i];
+    float side = 1.0 / sqrt(s);
+    float e = sdEllipsoid(q - b.xyz, b.w * vec3(side, s, side));
+    d = smin(d, e, uGoo * b.w * 1.6);
+  }
+  d += 0.005 * sin(q.x * 13.0 + uTime * 0.6) * sin(q.y * 11.0 - uTime * 0.5) * sin(q.z * 12.0 + uTime * 0.4);
+  return d;
+}
+float sdWax(vec3 p) {
+  return max(waxField(p), sdGlass(p) + 0.012);
+}
+
+// ---- Normals (tetrahedral) ---------------------------------------------
+const vec2 KN = vec2(1.0, -1.0);
+vec3 nLamp(vec3 p) {
+  float e = 0.0008;
+  return normalize(KN.xyy * mapLamp(p + KN.xyy * e).x + KN.yyx * mapLamp(p + KN.yyx * e).x +
+                   KN.yxy * mapLamp(p + KN.yxy * e).x + KN.xxx * mapLamp(p + KN.xxx * e).x);
+}
+vec3 nGlass(vec3 p) {
+  float e = 0.0008;
+  return normalize(KN.xyy * sdGlass(p + KN.xyy * e) + KN.yyx * sdGlass(p + KN.yyx * e) +
+                   KN.yxy * sdGlass(p + KN.yxy * e) + KN.xxx * sdGlass(p + KN.xxx * e));
+}
+vec3 nWax(vec3 p) {
+  float e = 0.0015;
+  return normalize(KN.xyy * sdWax(p + KN.xyy * e) + KN.yyx * sdWax(p + KN.yyx * e) +
+                   KN.yxy * sdWax(p + KN.yxy * e) + KN.xxx * sdWax(p + KN.xxx * e));
+}
+
+// ---- Room ----------------------------------------------------------------
+vec3 envMap(vec3 d, float rough) {
+  vec3 c = vec3(0.010, 0.010, 0.013) * (0.6 + 0.4 * d.y);
+  float az = atan(d.x, d.z);
+  float w = 0.16 + rough * 0.9;
+  // tall softbox, front-left
+  float s1 = smoothstep(w, 0.0, abs(az + 0.95)) * smoothstep(-0.25 - rough, 0.1, d.y) * smoothstep(1.0, 0.55, d.y);
+  c += vec3(0.92, 0.95, 1.0) * s1 * 1.5 * (1.0 - rough * 0.55);
+  // dimmer warm strip, right
+  float s2 = smoothstep(w * 1.5, 0.0, abs(az - 1.55)) * smoothstep(-0.3, 0.25, d.y) * smoothstep(0.9, 0.35, d.y);
+  c += vec3(1.0, 0.86, 0.72) * s2 * 0.4;
+  c += vec3(0.035) * smoothstep(0.55, 1.0, d.y);
+  c += uGlow * 0.12 * smoothstep(0.0, -0.6, d.y);
+  return c;
+}
+
+vec3 background(vec3 ro, vec3 rd) {
+  vec3 c = vec3(0.0055, 0.0055, 0.007);
+  if (rd.y < -0.001) {
+    float t = (FLOOR_Y - ro.y) / rd.y;
+    if (t > 0.0) {
+      vec3 p = ro + rd * t;
+      float r = length(p.xz);
+      vec3 gp = vec3(0.0, 0.15, 0.0) - p;
+      float lit = 1.6 / (1.0 + dot(gp, gp) * 1.1);
+      float occ = smoothstep(0.80, 1.7, r);
+      c += uGlow * 0.24 * lit * occ;
+    }
+  }
+  return c;
+}
+
+// soft glow around the glass, for pixels that miss the lamp
+vec3 halo(vec3 ro, vec3 rd) {
+  vec2 o = ro.xz, d = rd.xz;
+  float t = max(-dot(o, d) / max(dot(d, d), 1e-5), 0.0);
+  vec3 p = ro + rd * t;
+  float y = clamp(p.y, GY0, GY1);
+  float hd = length(vec2(max(length(p.xz) - glassR(y), 0.0), p.y - y));
+  return uGlow * (0.035 * exp(-hd * 1.2) + 0.05 * exp(-hd * 5.0));
+}
+
+// ---- Shading -----------------------------------------------------------
+vec3 shadeWax(vec3 p, vec3 rd) {
+  vec3 n = nWax(p);
+  vec3 L = normalize(vec3(0.0, GY0 - 0.3, 0.0) - p);
+  float h = clamp((p.y - GY0) / (GY1 - GY0), 0.0, 1.0);
+  float heat = 0.22 + 0.78 * exp(-h * 2.4);
+  float wrap = pow(clamp(dot(n, L) * 0.5 + 0.5, 0.0, 1.0), 2.0);
+  float thin = clamp(1.0 + waxField(p - n * 0.10) / 0.10, 0.0, 1.0);
+  float fres = pow(1.0 - clamp(dot(n, -rd), 0.0, 1.0), 3.0);
+  vec3 wc = uWax;
+
+  vec3 c = wc * wc * 0.05 * uBulb + wc * 0.008;
+  c += wc * wrap * heat * 1.5 * uBulb;                          // lit from the bulb below
+  c += wc * (0.18 + 0.9 * thin) * heat * uBulb;                  // translucency, necks glow
+  c += wc * 1.2 * uBulb * exp(-max(p.y - GY0, 0.0) * 4.5);       // hot pool
+  c += mix(wc, uLiquid, 0.4) * fres * 0.45 * heat * uBulb;       // rim
+  vec3 H = normalize(normalize(vec3(-0.55, 0.65, 0.55)) - rd);
+  c += vec3(0.8) * pow(max(dot(n, H), 0.0), 70.0) * 0.45;        // gloss
+  c += envMap(reflect(rd, n), 0.15) * (0.02 + 0.25 * fres);
+  return c;
+}
+
+vec3 interior(vec3 ro, vec3 rd) {
+  vec3 acc = vec3(0.0);
+  vec3 T = vec3(1.0);
+  vec3 absorb = (1.0 - uLiquid) * 0.55 + uHaze * 0.35;
+  vec3 hazeCol = mix(uLiquid, uWax, 0.25) * uBulb * uHaze;
+  float t = 0.0;
+  for (int i = 0; i < 96; i++) {
+    vec3 p = ro + rd * t;
+    float g = sdGlass(p);
+    float w = max(waxField(p), g + 0.012);
+    if (w < 0.0015) return acc + T * shadeWax(p, rd);
+    if (g > 0.0005) {
+      vec3 bg = p.y < GY0 + 0.06 ? uGlow * 1.5 : background(p, rd);
+      return acc + T * bg;
+    }
+    float st = clamp(min(w * 0.85, -g + 0.004), 0.003, 0.25);
+    float my = p.y + rd.y * st * 0.5;
+    acc += T * hazeCol * (0.10 + 0.9 * exp(-max(my - uPoolY, 0.0) * 2.2)) * st;
+    T *= exp(-absorb * st);
+    t += st;
+  }
+  return acc + T * background(ro + rd * t, rd);
+}
+
+vec3 shadeMetal(vec3 p, vec3 n, vec3 rd) {
+  float ci = clamp(dot(n, -rd), 0.0, 1.0);
+  vec3 F = uMetal + (1.0 - uMetal) * pow(1.0 - ci, 5.0);
+  vec3 c = envMap(reflect(rd, n), uRough) * F * 2.0;
+  vec3 gl = vec3(0.0, -0.3, 0.0) - p;
+  float gd = length(gl);
+  c += uGlow * mix(uMetal, vec3(0.3), 0.2) * max(dot(n, gl / gd), 0.0) * 0.9 / (1.0 + gd * gd * 3.0);
+  vec3 H = normalize(normalize(vec3(-0.55, 0.65, 0.55)) - rd);
+  c += uMetal * pow(max(dot(n, H), 0.0), mix(180.0, 12.0, uRough)) * (1.0 - uRough * 0.7) * 0.6;
+  c += uMetal * 0.015 * uRough;
+  return c;
+}
+
+vec2 boxHit(vec3 ro, vec3 rd, vec3 bmin, vec3 bmax) {
+  vec3 inv = 1.0 / (rd + vec3(1e-7));
+  vec3 t0 = (bmin - ro) * inv, t1 = (bmax - ro) * inv;
+  vec3 tmin = min(t0, t1), tmax = max(t0, t1);
+  return vec2(max(max(tmin.x, tmin.y), tmin.z), min(min(tmax.x, tmax.y), tmax.z));
+}
+
+vec3 aces(vec3 x) {
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy - vec2(uRes.x * 0.5, uRegion.x)) / uRegion.y;
+
+  vec3 ta = vec3(0.0, -0.02, 0.0);
+  vec3 ro = ta + 7.0 * vec3(0.0, sin(uPitch), cos(uPitch));
+  vec3 fw = normalize(ta - ro);
+  vec3 rt = normalize(cross(fw, vec3(0.0, 1.0, 0.0)));
+  vec3 up = cross(rt, fw);
+  vec3 rd = normalize(uv.x * rt + uv.y * up + 1.38 * uZoom * fw);
+
+  vec3 col;
+  bool hit = false;
+  float t = 0.0;
+  float mat = 0.0;
+  vec2 tb = boxHit(ro, rd, vec3(-0.85, -2.0, -0.85), vec3(0.85, 1.97, 0.85));
+  if (tb.x < tb.y && tb.y > 0.0) {
+    t = max(tb.x, 0.0);
+    for (int i = 0; i < 110; i++) {
+      vec2 m = mapLamp(ro + rd * t);
+      if (m.x < 0.0008) { hit = true; mat = m.y; break; }
+      t += m.x * 0.9;
+      if (t > tb.y) break;
+    }
+  }
+
+  if (hit) {
+    vec3 p = ro + rd * t;
+    if (mat > 2.5) {
+      vec3 n = nGlass(p);
+      float ci = clamp(dot(n, -rd), 0.0, 1.0);
+      float F = 0.03 + 0.97 * pow(1.0 - ci, 5.0);
+      vec3 refl = envMap(reflect(rd, n), 0.02);
+      vec3 r2 = refract(rd, n, uEta);
+      if (dot(r2, r2) < 0.01) r2 = rd;
+      vec3 inner = interior(p - n * 0.006, r2);
+      col = mix(inner, refl, F) + refl * 0.05;
+      vec3 H = normalize(normalize(vec3(-0.55, 0.65, 0.55)) - rd);
+      col += vec3(1.0) * pow(max(dot(n, H), 0.0), 220.0) * 0.8;
+    } else {
+      col = shadeMetal(p, nLamp(p), rd);
+    }
+  } else {
+    col = background(ro, rd) + halo(ro, rd);
+  }
+
+  col = aces(col * 1.05);
+  col = pow(col, vec3(1.0 / 2.2));
+  float dither = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+  col += (dither - 0.5) / 255.0;
+  gl_FragColor = vec4(col, 1.0);
+}
+</script>
+
+<script>
+(() => {
+  'use strict';
+
+  const MAXB = 16;
+  const STORE_KEY = 'waxflowlamp.settings.v1';
+
+  const DEFAULTS = {
+    power: true,
+    heat: 0.75,
+    flow: 1,
+    viscosity: 1,
+    wax: '#ff3a14',
+    amount: 8,
+    size: 1,
+    goo: 1,
+    liquid: '#ffc23d',
+    haze: 0.35,
+    bulb: 1,
+    finish: 'chrome',
+    refraction: 0.5,
+    autorotate: true,
+    spin: 0.25,
+    zoom: 1,
+    quality: 0.75,
+    adaptive: true,
+  };
+
+  const PRESETS = [
+    { name: 'Classic',  wax: '#ff3a14', liquid: '#ffc23d', haze: 0.35, finish: 'chrome' },
+    { name: 'Original', wax: '#ff7b1c', liquid: '#f4efe2', haze: 0.25, finish: 'brushed' },
+    { name: 'Ocean',    wax: '#1f9bff', liquid: '#38f0d0', haze: 0.35, finish: 'chrome' },
+    { name: 'Violet',   wax: '#c53bff', liquid: '#3a62ff', haze: 0.40, finish: 'black' },
+    { name: 'Lime',     wax: '#a6ff2a', liquid: '#9a3bff', haze: 0.40, finish: 'chrome' },
+    { name: 'Blush',    wax: '#ff4f8f', liquid: '#ffd7e6', haze: 0.30, finish: 'copper' },
+    { name: 'Ember',    wax: '#ffb21a', liquid: '#ff3b2f', haze: 0.45, finish: 'gold' },
+    { name: 'Glacier',  wax: '#f4f7ff', liquid: '#3d7bff', haze: 0.35, finish: 'brushed' },
+  ];
+
+  const FINISHES = {
+    chrome:  { label: 'Chrome',  metal: [0.92, 0.92, 0.94], rough: 0.04 },
+    brushed: { label: 'Brushed', metal: [0.78, 0.78, 0.80], rough: 0.38 },
+    gold:    { label: 'Gold',    metal: [1.00, 0.74, 0.32], rough: 0.12 },
+    copper:  { label: 'Copper',  metal: [0.95, 0.60, 0.48], rough: 0.18 },
+    black:   { label: 'Black',   metal: [0.05, 0.05, 0.06], rough: 0.45 },
+  };
+
+  const S = Object.assign({}, DEFAULTS);
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    if (saved && typeof saved === 'object') {
+      for (const k of Object.keys(DEFAULTS)) if (typeof saved[k] === typeof DEFAULTS[k]) S[k] = saved[k];
+    }
+  } catch (e) { /* storage unavailable: run on defaults */ }
+  let saveTimer = 0;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) {}
+    }, 250);
+  }
+
+  // SIM-BEGIN ---------------------------------------------------------------
+  // Wax physics: each blob carries a temperature. The pool at the bottom heats it,
+  // the liquid cools it (more so near the top), and buoyancy follows temperature.
+  // Blobs stick to the pool until hot enough and to the top until cool enough,
+  // which gives the slow, staggered wax-lamp cycle.
+  const GY0 = -0.80, GY1 = 1.45;
+  const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+  const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+  const rand = (a, b) => a + Math.random() * (b - a);
+  function glassR(y) {
+    const t = clamp01((y - GY0) / (GY1 - GY0));
+    const g = t + 0.35 * t * (1 - t);
+    return 0.40 + (0.24 - 0.40) * t + 0.22 * Math.sin(Math.PI * g);
+  }
+
+  const DROP_T = 0.42;   // leaves the top below this
+  const VSCALE = 0.9;    // buoyancy -> velocity
+
+  const sim = { t: 0, heat: 1, blobs: [] };
+
+  const poolY = () => GY0 + 0.15 + 0.005 * S.amount;
+  const restY = b => poolY() - b.r * 0.55 + b.r * 0.5 * clamp01((b.temp - 0.4) / (b.rise - 0.4));
+  const topY = b => GY1 - 0.06 - b.r * 0.7;
+
+  function newBlob(state) {
+    const b = {
+      x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
+      base: rand(0.08, 0.16), cap: rand(0.6, 1.6), f: rand(0.6, 1.4),
+      ph: [rand(0, 6.283), rand(0, 6.283), rand(0, 6.283)],
+      temp: 0.35, s: 1, r: 0.1, state: 'pool', rise: rand(0.68, 0.8),
+    };
+    b.r = b.base * S.size;
+    const a = rand(0, 6.283), rr = rand(0, 0.28);
+    b.x = Math.cos(a) * rr;
+    b.z = Math.sin(a) * rr;
+    if (state === 'pool') {
+      b.temp = rand(0.35, 0.62);
+      b.y = restY(b);
+    } else {
+      b.state = 'free';
+      b.y = rand(poolY() + 0.3, GY1 - 0.35);
+      b.temp = Math.random() < 0.5 ? rand(0.58, 0.72) : rand(0.28, 0.42);
+      b.vy = (b.temp - 0.5) * VSCALE / S.viscosity;
+    }
+    return b;
+  }
+
+  function syncBlobCount() {
+    while (sim.blobs.length < S.amount) sim.blobs.push(newBlob('pool'));
+    if (sim.blobs.length > S.amount) sim.blobs.length = S.amount;
+  }
+
+  function seedBlobs() {
+    sim.blobs = [];
+    for (let i = 0; i < S.amount; i++) sim.blobs.push(newBlob(i < 3 ? 'pool' : 'free'));
+  }
+
+  function stepSim(dt) {
+    sim.t += dt;
+    const heat = S.heat * sim.heat;
+    const visc = S.viscosity;
+    const blobs = sim.blobs;
+
+    for (const b of blobs) {
+      b.r = b.base * S.size * (1 + 0.05 * Math.sin(sim.t * 0.23 + b.ph[0]));
+      const h = clamp01((b.y - GY0) / (GY1 - GY0));
+
+      // temperature
+      let target, k;
+      if (b.state === 'pool') {
+        target = 0.45 + 0.5 * heat;
+        k = 0.15;
+      } else {
+        target = 0.2 + 0.25 * heat * (1 - h);
+        k = 0.03 * (1 + 3 * smooth(0.7, 1, h));
+      }
+      b.temp += (target - b.temp) * (1 - Math.exp(-k * dt / b.cap));
+
+      // vertical motion
+      if (b.state === 'pool') {
+        b.vy = (restY(b) - b.y) * 0.8;
+        if (b.temp > b.rise) { b.state = 'free'; b.vy = 0.004; }
+      } else if (b.state === 'top') {
+        b.vy = (topY(b) - b.y) * 0.6;
+        if (b.temp < DROP_T) { b.state = 'free'; b.vy = -0.004; }
+      } else {
+        const vt = (b.temp - 0.5) * VSCALE / visc;
+        b.vy += (vt - b.vy) * (1 - Math.exp(-dt * 1.2 / visc));
+      }
+
+      // slow sideways wander
+      const R = glassR(b.y);
+      const wander = R * (b.state === 'pool' ? 0.55 : 0.4);
+      const tx = wander * Math.sin(sim.t * 0.05 * b.f + b.ph[1]);
+      const tz = wander * Math.sin(sim.t * 0.043 * b.f + b.ph[2]);
+      const spring = b.state === 'pool' ? 0.02 : 0.06;
+      b.vx += ((tx - b.x) * spring - b.vx * 0.8) * dt;
+      b.vz += ((tz - b.z) * spring - b.vz * 0.8) * dt;
+
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.z += b.vz * dt;
+    }
+
+    // blobs push apart a little and share heat when touching
+    for (let i = 0; i < blobs.length; i++) {
+      for (let j = i + 1; j < blobs.length; j++) {
+        const a = blobs[i], c = blobs[j];
+        const dx = c.x - a.x, dy = c.y - a.y, dz = c.z - a.z;
+        const d = Math.hypot(dx, dy, dz) || 1e-4;
+        const minD = (a.r + c.r) * 0.8;
+        if (d < minD) {
+          // sideways only: wax slides past and merges rather than stacking
+          const hd = Math.hypot(dx, dz) || 1e-4;
+          const push = (minD - d) * 0.5 * Math.min(1, dt * 1.5) / hd;
+          a.x -= dx * push; a.z -= dz * push;
+          c.x += dx * push; c.z += dz * push;
+          if (a.state === 'free' && c.state === 'free') {
+            const m = (c.temp - a.temp) * Math.min(1, dt * 0.05);
+            a.temp += m; c.temp -= m;
+          }
+        }
+      }
+    }
+
+    for (const b of blobs) {
+      // landing / docking
+      const ry = poolY() - b.r * 0.55;
+      if (b.state === 'free' && b.y <= poolY() - b.r * 0.2 && b.vy < 0) {
+        // each landing rolls a new temperament so the blobs never fall into step
+        b.state = 'pool';
+        b.cap = rand(0.5, 1.8);
+        b.rise = rand(0.68, 0.8);
+      }
+      const ty = topY(b);
+      if (b.state === 'free' && b.y >= ty - 0.01 && b.vy > 0) b.state = 'top';
+      if (b.y < ry - 0.02) { b.y = ry - 0.02; if (b.vy < 0) b.vy = 0; }
+      if (b.y > ty + 0.01) { b.y = ty + 0.01; if (b.vy > 0) b.vy = 0; }
+
+      // keep inside the glass
+      const rr = Math.hypot(b.x, b.z);
+      const maxR = Math.max(0, glassR(b.y) - b.r * 0.8 - 0.015);
+      if (rr > maxR) {
+        const f = maxR / rr;
+        b.x *= f; b.z *= f;
+        b.vx *= 0.5; b.vz *= 0.5;
+      }
+
+      // stretch along the direction of travel
+      const sT = b.state === 'free' ? 1 + Math.min(Math.abs(b.vy) * 3.2, 0.55)
+               : b.state === 'top' ? 0.86 : 0.95;
+      b.s += (sT - b.s) * (1 - Math.exp(-dt * 2));
+    }
+  }
+  // SIM-END -----------------------------------------------------------------
+
+  // ---- WebGL -----------------------------------------------------------------
+  const canvas = document.getElementById('gl');
+  const errEl = document.getElementById('err');
+  const root = document.documentElement;
+
+  function fail(msg, detail) {
+    errEl.textContent = msg;
+    errEl.hidden = false;
+    root.dataset.status = 'error: ' + (detail || msg);
+  }
+
+  const gl = canvas.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'high-performance' })
+          || canvas.getContext('experimental-webgl');
+  if (!gl) { fail('This lamp needs WebGL, which this browser has turned off.'); return; }
+
+  function compile(type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+    return sh;
+  }
+  let prog;
+  try {
+    prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, 'attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}'));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, document.getElementById('frag').textContent));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  } catch (e) {
+    fail('The lamp could not start on this device.', String(e.message || e));
+    return;
+  }
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const aLoc = gl.getAttribLocation(prog, 'a');
+  gl.enableVertexAttribArray(aLoc);
+  gl.vertexAttribPointer(aLoc, 2, gl.FLOAT, false, 0, 0);
+
+  const U = {};
+  for (const n of ['uRes', 'uRegion', 'uTime', 'uRot', 'uPitch', 'uZoom', 'uBlobs', 'uStretch', 'uCount',
+                   'uWax', 'uLiquid', 'uGlow', 'uMetal', 'uRough', 'uHaze', 'uBulb', 'uGoo', 'uPoolY', 'uEta']) {
+    U[n] = gl.getUniformLocation(prog, n);
+  }
+  const blobData = new Float32Array(MAXB * 4);
+  const stretchData = new Float32Array(MAXB);
+
+  const hexToLinear = hex => {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => Math.pow(v / 255, 2.2));
+  };
+
+  // ---- View ------------------------------------------------------------------
+  const hero = document.getElementById('hero');
+  const panel = document.getElementById('panel');
+  const cue = document.getElementById('cue');
+  const view = { yaw: 0, yawVel: 0, pitch: 0.1, bulb: S.power ? 1 : 0 };
+  let renderScale = S.quality;
+
+  let drag = null;
+  hero.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    drag = { x: e.clientX, y: e.clientY, t: performance.now() };
+    view.yawVel = 0;
+    hero.setPointerCapture(e.pointerId);
+    hero.classList.add('dragging');
+  });
+  hero.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const now = performance.now();
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    const dts = Math.max((now - drag.t) / 1000, 1 / 240);
+    view.yaw += dx * 0.008;
+    view.yawVel = view.yawVel * 0.6 + (dx * 0.008 / dts) * 0.4;
+    if (e.pointerType === 'mouse') view.pitch = Math.min(0.6, Math.max(-0.05, view.pitch + dy * 0.003));
+    drag = { x: e.clientX, y: e.clientY, t: now };
+  });
+  const endDrag = () => { drag = null; hero.classList.remove('dragging'); };
+  hero.addEventListener('pointerup', endDrag);
+  hero.addEventListener('pointercancel', () => { view.yawVel = 0; endDrag(); });
+  hero.addEventListener('dblclick', () => { view.pitch = 0.1; });
+
+  cue.addEventListener('click', () => {
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+  });
+
+  // ---- Frame loop ----------------------------------------------------------
+  const fps = { ema: 16.7, lastAdjust: 0, shown: 0 };
+  let readoutEl = null;
+  let last = performance.now();
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.round(canvas.clientWidth * dpr * renderScale));
+    const h = Math.max(1, Math.round(canvas.clientHeight * dpr * renderScale));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      gl.viewport(0, 0, w, h);
+    }
+  }
+
+  function frame(now) {
+    const dtMs = Math.min(now - last, 250);
+    last = now;
+    const dt = dtMs / 1000;
+
+    // power: the bulb answers quickly, the wax takes a while to warm or cool
+    const on = S.power ? 1 : 0;
+    view.bulb += (on - view.bulb) * (1 - Math.exp(-dt * 2.5));
+    sim.heat += (on - sim.heat) * (1 - Math.exp(-dt * 0.2));
+
+    const simDt = Math.min(dt, 1 / 20) * S.flow;
+    const steps = Math.max(1, Math.ceil(simDt / (1 / 60)));
+    for (let i = 0; i < steps; i++) stepSim(simDt / steps);
+
+    if (!drag) {
+      view.yaw += view.yawVel * dt;
+      view.yawVel *= Math.exp(-dt * 2.5);
+      if (S.autorotate) view.yaw += dt * S.spin * 0.6;
+    }
+
+    // adaptive resolution
+    fps.ema += (dtMs - fps.ema) * 0.05;
+    if (S.adaptive && now - fps.lastAdjust > 1000) {
+      if (fps.ema > 22 && renderScale > 0.35) { renderScale = Math.max(0.35, renderScale * 0.85); fps.lastAdjust = now; }
+      else if (fps.ema < 18 && renderScale < S.quality) { renderScale = Math.min(S.quality, renderScale * 1.1); fps.lastAdjust = now; }
+    }
+    if (readoutEl && now - fps.shown > 500) {
+      fps.shown = now;
+      readoutEl.textContent = `${Math.round(1000 / fps.ema)} fps · ${canvas.width}×${canvas.height}`;
+    }
+
+    resize();
+
+    // the lamp sits in whatever part of the screen the controls leave free
+    const vh = canvas.clientHeight || window.innerHeight;
+    const px = canvas.height / vh;
+    const free = Math.min(vh, Math.max(vh * 0.36, panel.getBoundingClientRect().top));
+    cue.style.opacity = Math.max(0, 1 - window.scrollY / 120) * 0.55;
+
+    const blobs = sim.blobs;
+    const n = Math.min(blobs.length, MAXB);
+    for (let i = 0; i < n; i++) {
+      const b = blobs[i];
+      blobData.set([b.x, b.y, b.z, b.r], i * 4);
+      stretchData[i] = b.s;
+    }
+
+    const wax = hexToLinear(S.wax), liquid = hexToLinear(S.liquid);
+    const bulb = S.bulb * (0.05 + 0.95 * view.bulb);
+    const fin = FINISHES[S.finish] || FINISHES.chrome;
+
+    gl.uniform2f(U.uRes, canvas.width, canvas.height);
+    gl.uniform2f(U.uRegion, canvas.height - free * px * 0.5, free * px);
+    gl.uniform1f(U.uTime, sim.t);
+    gl.uniform2f(U.uRot, Math.cos(view.yaw), Math.sin(view.yaw));
+    gl.uniform1f(U.uPitch, view.pitch);
+    gl.uniform1f(U.uZoom, S.zoom);
+    gl.uniform4fv(U.uBlobs, blobData);
+    gl.uniform1fv(U.uStretch, stretchData);
+    gl.uniform1i(U.uCount, n);
+    gl.uniform3fv(U.uWax, wax);
+    gl.uniform3fv(U.uLiquid, liquid);
+    gl.uniform3f(U.uGlow, ...[0, 1, 2].map(i => (liquid[i] * 0.4 + wax[i] * 0.6) * bulb));
+    gl.uniform3fv(U.uMetal, fin.metal);
+    gl.uniform1f(U.uRough, fin.rough);
+    gl.uniform1f(U.uHaze, S.haze);
+    gl.uniform1f(U.uBulb, bulb);
+    gl.uniform1f(U.uGoo, S.goo);
+    gl.uniform1f(U.uPoolY, poolY());
+    gl.uniform1f(U.uEta, 1 / (1 + 0.3 * S.refraction));
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    requestAnimationFrame(frame);
+  }
+
+  // ---- Controls ------------------------------------------------------------
+  const pct = v => Math.round(v * 100) + '%';
+  const times = v => v.toFixed(2).replace(/0$/, '') + '×';
+  const GROUPS = [
+    { title: 'Presets', presets: true },
+    { title: 'Power & heat', items: [
+      { key: 'power', type: 'toggle', label: 'Power' },
+      { key: 'heat', type: 'range', label: 'Heat', min: 0.4, max: 1, step: 0.01, fmt: pct },
+      { key: 'flow', type: 'range', label: 'Flow speed', min: 0.25, max: 4, step: 0.05, fmt: times },
+      { key: 'viscosity', type: 'range', label: 'Viscosity', min: 0.4, max: 2.5, step: 0.05, fmt: times },
+    ] },
+    { title: 'Wax', items: [
+      { key: 'wax', type: 'color', label: 'Colour' },
+      { key: 'amount', type: 'range', label: 'Amount', min: 3, max: MAXB, step: 1, fmt: v => v + ' blobs' },
+      { key: 'size', type: 'range', label: 'Blob size', min: 0.6, max: 1.5, step: 0.01, fmt: times },
+      { key: 'goo', type: 'range', label: 'Gooeyness', min: 0.3, max: 2.2, step: 0.01, fmt: times },
+    ] },
+    { title: 'Liquid & light', items: [
+      { key: 'liquid', type: 'color', label: 'Liquid colour' },
+      { key: 'haze', type: 'range', label: 'Haze', min: 0, max: 1, step: 0.01, fmt: pct },
+      { key: 'bulb', type: 'range', label: 'Bulb brightness', min: 0.2, max: 2, step: 0.01, fmt: pct },
+    ] },
+    { title: 'Lamp', items: [
+      { key: 'finish', type: 'choice', label: 'Base finish', options: FINISHES },
+      { key: 'refraction', type: 'range', label: 'Glass refraction', min: 0, max: 1, step: 0.01, fmt: pct },
+    ] },
+    { title: 'View', items: [
+      { key: 'autorotate', type: 'toggle', label: 'Turntable' },
+      { key: 'spin', type: 'range', label: 'Turn speed', min: 0.02, max: 1, step: 0.01, fmt: pct },
+      { key: 'zoom', type: 'range', label: 'Zoom', min: 0.7, max: 1.8, step: 0.01, fmt: times },
+    ] },
+    { title: 'Performance', items: [
+      { key: 'quality', type: 'range', label: 'Render quality', min: 0.35, max: 1, step: 0.05, fmt: pct },
+      { key: 'adaptive', type: 'toggle', label: 'Lower quality when slow' },
+      { type: 'readout' },
+    ] },
+  ];
+
+  const CHEVRON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+  const syncers = [];
+  const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+
+  function onChange(key) {
+    if (key === 'amount') syncBlobCount();
+    if (key === 'quality') renderScale = S.quality;
+    if (key === 'wax') root.style.setProperty('--accent', S.wax);
+    save();
+  }
+
+  function buildItem(it) {
+    if (it.type === 'readout') {
+      const row = el('div', 'row-inline', '<span>Frame rate</span>');
+      readoutEl = el('span', 'readout', '–');
+      row.append(readoutEl);
+      return row;
+    }
+    const id = 'c-' + it.key;
+    if (it.type === 'range') {
+      const row = el('div');
+      const head = el('div', 'row-head');
+      const lab = el('label', null, it.label); lab.htmlFor = id;
+      const val = el('span', 'val');
+      head.append(lab, val);
+      const input = el('input');
+      Object.assign(input, { type: 'range', id, min: it.min, max: it.max, step: it.step });
+      const paint = () => {
+        val.textContent = it.fmt(S[it.key]);
+        input.style.setProperty('--p', ((S[it.key] - it.min) / (it.max - it.min) * 100) + '%');
+      };
+      input.addEventListener('input', () => { S[it.key] = Number(input.value); paint(); onChange(it.key); });
+      syncers.push(() => { input.value = S[it.key]; paint(); });
+      row.append(head, input);
+      return row;
+    }
+    if (it.type === 'toggle') {
+      const row = el('div', 'row-inline');
+      const lab = el('span', null, it.label); lab.id = id + '-l';
+      const sw = el('button', 'switch');
+      sw.type = 'button';
+      sw.setAttribute('role', 'switch');
+      sw.setAttribute('aria-labelledby', lab.id);
+      sw.addEventListener('click', () => { S[it.key] = !S[it.key]; sw.setAttribute('aria-checked', S[it.key]); onChange(it.key); });
+      syncers.push(() => sw.setAttribute('aria-checked', S[it.key]));
+      row.append(lab, sw);
+      return row;
+    }
+    if (it.type === 'color') {
+      const row = el('div', 'row-inline');
+      const lab = el('label', null, it.label); lab.htmlFor = id;
+      const input = el('input');
+      Object.assign(input, { type: 'color', id });
+      input.addEventListener('input', () => { S[it.key] = input.value; onChange(it.key); });
+      syncers.push(() => { input.value = S[it.key]; });
+      row.append(lab, input);
+      return row;
+    }
+    if (it.type === 'choice') {
+      const row = el('div');
+      row.append(el('div', 'row-head', `<span>${it.label}</span>`));
+      const chips = el('div', 'chips');
+      const btns = Object.entries(it.options).map(([k, o]) => {
+        const b = el('button', 'chip', o.label);
+        b.type = 'button';
+        b.addEventListener('click', () => { S[it.key] = k; syncAll(); onChange(it.key); });
+        chips.append(b);
+        return [k, b];
+      });
+      syncers.push(() => btns.forEach(([k, b]) => b.setAttribute('aria-pressed', S[it.key] === k)));
+      row.append(chips);
+      return row;
+    }
+  }
+
+  function buildPresets() {
+    const chips = el('div', 'chips');
+    const btns = PRESETS.map(p => {
+      const b = el('button', 'chip', `<span class="dots"><i style="background:${p.wax}"></i><i style="background:${p.liquid}"></i></span>${p.name}`);
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        Object.assign(S, { wax: p.wax, liquid: p.liquid, haze: p.haze, finish: p.finish });
+        syncAll();
+        onChange('wax');
+      });
+      chips.append(b);
+      return [p, b];
+    });
+    const rnd = el('button', 'chip', 'Random');
+    rnd.type = 'button';
+    rnd.addEventListener('click', () => {
+      const hsl = (h, s, l) => {
+        const f = n => { const k = (n + h / 30) % 12; const c = l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1)); return Math.round(c * 255).toString(16).padStart(2, '0'); };
+        return '#' + f(0) + f(8) + f(4);
+      };
+      const h = rand(0, 360);
+      S.wax = hsl(h, 1, 0.55);
+      S.liquid = hsl((h + rand(90, 270)) % 360, rand(0.6, 1), rand(0.55, 0.85));
+      S.haze = Math.round(rand(0.2, 0.5) * 100) / 100;
+      S.finish = Object.keys(FINISHES)[Math.floor(rand(0, 5))];
+      syncAll();
+      onChange('wax');
+    });
+    chips.append(rnd);
+    syncers.push(() => btns.forEach(([p, b]) => b.setAttribute('aria-pressed', S.wax === p.wax && S.liquid === p.liquid)));
+    return chips;
+  }
+
+  function syncAll() { syncers.forEach(f => f()); }
+
+  const groupsEl = document.getElementById('groups');
+  for (const g of GROUPS) {
+    const d = el('details');
+    d.append(el('summary', null, `<span>${g.title}</span>${CHEVRON}`));
+    const body = el('div', 'group-body');
+    if (g.presets) body.append(buildPresets());
+    for (const it of g.items || []) body.append(buildItem(it));
+    d.append(body);
+    groupsEl.append(d);
+  }
+
+  document.getElementById('reset').addEventListener('click', () => {
+    Object.assign(S, DEFAULTS);
+    renderScale = S.quality;
+    view.pitch = 0.1;
+    syncBlobCount();
+    syncAll();
+    onChange('wax');
+  });
+
+  root.style.setProperty('--accent', S.wax);
+  syncAll();
+
+  // ---- Start -----------------------------------------------------------------
+  // Begin mid-cycle so the first look is already alive, not a cold puddle.
+  const params = new URLSearchParams(location.search);
+  seedBlobs();
+  const warm = 8 + Number(params.get('sim') || 0);
+  for (let t = 0; t < warm; t += 1 / 30) stepSim(1 / 30);
+  if (params.has('scale')) { S.adaptive = false; renderScale = Number(params.get('scale')); }
+  if (params.has('yaw')) view.yaw = Number(params.get('yaw'));
+  if (params.has('panel')) {
+    document.querySelectorAll('details').forEach((d, i) => { if (i < 2) d.open = true; });
+    requestAnimationFrame(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  }
+
+  root.dataset.status = 'ok';
+  requestAnimationFrame(t => { last = t; frame(t); });
+})();
+</script>
+</body>
+</html>
