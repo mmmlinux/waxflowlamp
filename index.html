@@ -315,7 +315,7 @@ uniform vec2  uRot;      // cos/sin of the wax frame's turn
 uniform float uPitch;
 uniform float uZoom;
 uniform vec4  uBlobs[MAXB];
-uniform float uStretch[MAXB];
+uniform vec4  uInfo[MAXB];  // x: stretch, y: 1 if in the pool, z: cluster id, w: fusion blend
 uniform int   uCount;
 uniform vec3  uWax;
 uniform vec3  uLiquid;
@@ -333,6 +333,7 @@ const float GY0 = -0.80;  const float GY1 = 1.45;
 const float BY0 = -2.00;  const float BY1 = -0.76;
 const float CY0 = 1.38;   const float CY1 = 1.95;
 const float FLOOR_Y = -2.0;
+const float SEAM = 0.03;     // blend between blobs that touch but have not fused
 
 float glassR(float y) {
   float t = clamp((y - GY0) / (GY1 - GY0), 0.0, 1.0);
@@ -403,20 +404,48 @@ float sdEllipsoid(vec3 p, vec3 r) {
   float k1 = length(p / (r * r));
   return k0 * (k0 - 1.0) / max(k1, 1e-4);
 }
+// a stretched blob with its own slowly shifting lumps (seed keeps each blob distinct)
+float sdBlob(vec3 p, vec4 b, float s, float seed) {
+  float side = 1.0 / sqrt(s);
+  vec3 l = p / b.w;
+  float lump = sin(l.x * 2.9 + uTime * 0.37 + seed) * sin(l.y * 2.5 - uTime * 0.29 + seed * 1.7)
+             * sin(l.z * 2.7 + uTime * 0.33 + seed * 2.3);
+  return sdEllipsoid(p, b.w * vec3(side, s, side)) + b.w * 0.11 * lump;
+}
 float waxField(vec3 p) {
   // into the wax frame (the lamp turns; the room and its lights do not)
   vec3 q = vec3(uRot.x * p.x - uRot.y * p.z, p.y, uRot.y * p.x + uRot.x * p.z);
   // slow domain warp: lumpy, never-quite-round wax
   q += vec3(0.045, 0.03, 0.045) * sin(q.yzx * vec3(5.3, 4.1, 4.7) + uTime * vec3(0.31, 0.23, 0.27));
-  float d = q.y - uPoolY - 0.012 * sin(q.x * 7.0 + uTime * 0.35) * sin(q.z * 6.0 - uTime * 0.27);
+  // the pool and the blobs resting in it are one gooey mass
+  float pool = q.y - uPoolY - 0.012 * sin(q.x * 7.0 + uTime * 0.35) * sin(q.z * 6.0 - uTime * 0.27);
   for (int i = 0; i < MAXB; i++) {
     if (i >= uCount) break;
+    vec4 inf = uInfo[i];
+    if (inf.y < 0.5) continue;
     vec4 b = uBlobs[i];
-    float s = uStretch[i];
-    float side = 1.0 / sqrt(s);
-    float e = sdEllipsoid(q - b.xyz, b.w * vec3(side, s, side));
-    d = smin(d, e, uGoo * b.w * 1.6);
+    pool = smin(pool, sdBlob(q - b.xyz, b, inf.x, mod(inf.z, 17.0) * 1.3), uGoo * b.w * 1.6);
   }
+  // free blobs: a gooey neck to the pool, but only a hairline seam against each other
+  // unless they are fusing (same cluster), when the blend grows with the bond
+  float d = pool;
+  float cl = 1e5, cid = -1.0, ck = 0.1;
+  for (int i = 0; i < MAXB; i++) {
+    if (i >= uCount) break;
+    vec4 inf = uInfo[i];
+    if (inf.y > 0.5) continue;
+    vec4 b = uBlobs[i];
+    float e = sdBlob(q - b.xyz, b, inf.x, mod(inf.z, 17.0) * 1.3);
+    float k = uGoo * b.w * 1.6;
+    if (inf.z != cid) {
+      if (cid >= 0.0) d = smin(d, smin(cl, pool, ck), SEAM);
+      cl = e; cid = inf.z; ck = k;
+    } else {
+      ck = max(ck, k);
+      cl = smin(cl, e, mix(SEAM, ck, inf.w));
+    }
+  }
+  if (cid >= 0.0) d = smin(d, smin(cl, pool, ck), SEAM);
   d += 0.005 * sin(q.x * 13.0 + uTime * 0.6) * sin(q.y * 11.0 - uTime * 0.5) * sin(q.z * 12.0 + uTime * 0.4);
   return d;
 }
@@ -521,7 +550,7 @@ vec3 interior(vec3 ro, vec3 rd) {
       vec3 bg = p.y < GY0 + 0.06 ? uGlow * 1.5 : background(p, rd);
       return acc + T * bg;
     }
-    float st = clamp(min(w * 0.85, -g + 0.004), 0.003, 0.25);
+    float st = clamp(min(w * 0.75, -g + 0.004), 0.003, 0.25);
     float my = p.y + rd.y * st * 0.5;
     acc += T * hazeCol * (0.10 + 0.9 * exp(-max(my - uPoolY, 0.0) * 2.2)) * st;
     T *= exp(-absorb * st);
@@ -674,6 +703,13 @@ void main() {
   // the liquid cools it (more so near the top), and buoyancy follows temperature.
   // Blobs stick to the pool until hot enough and to the top until cool enough,
   // which gives the slow, staggered wax-lamp cycle.
+  //
+  // Blobs that meet do not merge on contact. They press together and slide past
+  // while a fusion bond builds: faster the deeper they press (more shared surface)
+  // and the closer their temperatures, which contact itself evens out. Some pairs
+  // are sticky and fuse almost on impact. A fusing pair grows a neck, then the
+  // smaller blob drains into the larger. Big merged blobs sometimes pinch off a
+  // trailing piece, and merged wax splits up again when it melts into the pool.
   const GY0 = -0.80, GY1 = 1.45;
   const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
   const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
@@ -684,22 +720,27 @@ void main() {
     return 0.40 + (0.24 - 0.40) * t + 0.22 * Math.sin(Math.PI * g);
   }
 
-  const DROP_T = 0.42;   // leaves the top below this
-  const VSCALE = 0.9;    // buoyancy -> velocity
+  const DROP_T = 0.42;    // leaves the top below this
+  const VSCALE = 0.9;     // buoyancy -> velocity
+  const MAX_BASE = 0.24;  // largest a merged blob may grow
+  const SQUISH = 0.94;    // unfused blobs may press this far into each other
 
-  const sim = { t: 0, heat: 1, blobs: [] };
+  const sim = { t: 0, heat: 1, blobs: [], pairs: new Map(), nextId: 1, stats: { contacts: 0, fusions: 0 } };
 
   const poolY = () => GY0 + 0.15 + 0.005 * S.amount;
   const restY = b => poolY() - b.r * 0.55 + b.r * 0.5 * clamp01((b.temp - 0.4) / (b.rise - 0.4));
   const topY = b => GY1 - 0.06 - b.r * 0.7;
+  const newBase = () => rand(0.08, 0.16);
 
   function newBlob(state) {
     const b = {
+      id: sim.nextId++, active: true, mass: 1, fuse: null, split: null, coolWith: null, coolUntil: 0,
       x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
-      base: rand(0.08, 0.16), cap: rand(0.6, 1.6), f: rand(0.6, 1.4),
+      base: 0, goal: newBase(), cap: rand(0.6, 1.6), f: rand(0.6, 1.4),
       ph: [rand(0, 6.283), rand(0, 6.283), rand(0, 6.283)],
       temp: 0.35, s: 1, r: 0.1, state: 'pool', rise: rand(0.68, 0.8),
     };
+    b.base = b.goal;
     b.r = b.base * S.size;
     const a = rand(0, 6.283), rr = rand(0, 0.28);
     b.x = Math.cos(a) * rr;
@@ -716,15 +757,66 @@ void main() {
     return b;
   }
 
+  // a blob reborn in the pool, growing up out of it
+  function respawn(b, near) {
+    const fresh = newBlob('pool');
+    Object.assign(b, fresh, { id: b.id });
+    b.base = 0.02;
+    b.r = b.base * S.size;
+    const a = rand(0, 6.283);
+    b.x = near.x + Math.cos(a) * 0.1;
+    b.z = near.z + Math.sin(a) * 0.1;
+    b.y = poolY() - 0.05;
+    b.temp = rand(0.35, 0.5);
+  }
+
   function syncBlobCount() {
     while (sim.blobs.length < S.amount) sim.blobs.push(newBlob('pool'));
-    if (sim.blobs.length > S.amount) sim.blobs.length = S.amount;
+    if (sim.blobs.length > S.amount) {
+      sim.blobs.sort((a, b) => b.active - a.active);
+      sim.blobs.length = S.amount;
+      for (const b of sim.blobs) if (b.fuse && !b.fuse.into.active) b.fuse = null;
+      for (const [k, p] of sim.pairs) if (!sim.blobs.includes(p.a) || !sim.blobs.includes(p.c)) sim.pairs.delete(k);
+    }
   }
 
   function seedBlobs() {
     sim.blobs = [];
+    sim.pairs.clear();
     for (let i = 0; i < S.amount; i++) sim.blobs.push(newBlob(i < 3 ? 'pool' : 'free'));
   }
+
+  const rootOf = b => { while (b.fuse) b = b.fuse.into; return b; };
+  // blobs drawn as one gooey body: a fusing pair, or a blob and the piece pinching off it
+  function clusterId(b) {
+    for (let i = 0; i < 32; i++) {
+      if (b.fuse) b = b.fuse.into;
+      else if (b.split) b = b.split.from;
+      else break;
+    }
+    return b.id;
+  }
+  const blend = b => b.fuse ? b.fuse.w : b.split ? b.split.w : 0;
+
+  // a merged blob pinches off part of itself; the piece is a little cooler or warmer,
+  // so it trails behind until the neck thins and snaps
+  function startSplit(o, p) {
+    Object.assign(o, newBlob('free'), { id: o.id });
+    const dir = p.vy >= 0 ? 1 : -1;
+    o.base = o.goal = 0.02;
+    o.r = o.base * S.size;
+    o.x = p.x + rand(-0.02, 0.02);
+    o.z = p.z + rand(-0.02, 0.02);
+    o.y = p.y - dir * p.r * 0.35;
+    o.vx = p.vx; o.vy = p.vy; o.vz = p.vz;
+    o.temp = p.temp - dir * 0.07;
+    o.s = p.s;
+    o.split = { from: p, w: 1, age: 0, vol: p.base ** 3 * rand(0.3, 0.5) };
+    p.mass--;
+  }
+
+  // effective radius of a stretched blob along a direction with vertical component ny
+  const reach = (b, ny) => b.r * (b.s * Math.abs(ny) + (1 - Math.abs(ny)) / Math.sqrt(b.s));
 
   function stepSim(dt) {
     sim.t += dt;
@@ -733,6 +825,8 @@ void main() {
     const blobs = sim.blobs;
 
     for (const b of blobs) {
+      if (!b.active) continue;
+      b.base += (b.goal - b.base) * (1 - Math.exp(-dt * 0.35));
       b.r = b.base * S.size * (1 + 0.05 * Math.sin(sim.t * 0.23 + b.ph[0]));
       const h = clamp01((b.y - GY0) / (GY1 - GY0));
 
@@ -755,7 +849,8 @@ void main() {
         b.vy = (topY(b) - b.y) * 0.6;
         if (b.temp < DROP_T) { b.state = 'free'; b.vy = -0.004; }
       } else {
-        const vt = (b.temp - 0.5) * VSCALE / visc;
+        // bigger blobs move a little faster, as in a real viscous liquid
+        const vt = (b.temp - 0.5) * VSCALE / visc * Math.min(1.5, Math.max(0.75, b.base / 0.11));
         b.vy += (vt - b.vy) * (1 - Math.exp(-dt * 1.2 / visc));
       }
 
@@ -773,28 +868,137 @@ void main() {
       b.z += b.vz * dt;
     }
 
-    // blobs push apart a little and share heat when touching
+    // contact: press, slide, trade heat, build a bond
+    for (const p of sim.pairs.values()) p.touch = false;
     for (let i = 0; i < blobs.length; i++) {
+      const a = blobs[i];
+      if (!a.active || a.state === 'pool' || a.fuse || a.split) continue;
       for (let j = i + 1; j < blobs.length; j++) {
-        const a = blobs[i], c = blobs[j];
+        const c = blobs[j];
+        if (!c.active || c.state === 'pool' || c.fuse || c.split) continue;
         const dx = c.x - a.x, dy = c.y - a.y, dz = c.z - a.z;
         const d = Math.hypot(dx, dy, dz) || 1e-4;
-        const minD = (a.r + c.r) * 0.8;
-        if (d < minD) {
-          // sideways only: wax slides past and merges rather than stacking
-          const hd = Math.hypot(dx, dz) || 1e-4;
-          const push = (minD - d) * 0.5 * Math.min(1, dt * 1.5) / hd;
-          a.x -= dx * push; a.z -= dz * push;
-          c.x += dx * push; c.z += dz * push;
-          if (a.state === 'free' && c.state === 'free') {
-            const m = (c.temp - a.temp) * Math.min(1, dt * 0.05);
-            a.temp += m; c.temp -= m;
+        const nx = dx / d, ny = dy / d, nz = dz / d;
+        const contact = reach(a, ny) + reach(c, ny);
+        if (d > contact * 1.02) continue;
+
+        const key = a.id < c.id ? a.id * 4096 + c.id : c.id * 4096 + a.id;
+        let pair = sim.pairs.get(key);
+        if (!pair) {
+          // most pairs are reluctant; a few are sticky and fuse on the bump
+          // (and a freshly split pair won't rejoin straight away)
+          const sticky = Math.random() < 0.25;
+          const justSplit = sim.t < Math.max(a.coolWith === c ? a.coolUntil : 0, c.coolWith === a ? c.coolUntil : 0);
+          const stick = justSplit ? 0 : sticky ? rand(2.5, 5) : rand(0.04, 0.3);
+          pair = { a, c, prog: 0, stick, side: rand(0, 6.283), apart: 0 };
+          sim.pairs.set(key, pair);
+          sim.stats.contacts++;
+        }
+        pair.touch = true;
+        pair.apart = 0;
+
+        const m = (c.temp - a.temp) * Math.min(1, dt * 0.25);
+        a.temp += m; c.temp -= m;
+
+        const press = clamp01((contact - d) / contact);
+        const sameTemp = clamp01(1 - Math.abs(a.temp - c.temp) / 0.12);
+        pair.prog += dt * pair.stick * (0.15 + press * 8) * (0.2 + 0.8 * sameTemp);
+        if (pair.prog >= 1) {
+          const [big, small] = a.base >= c.base ? [a, c] : [c, a];
+          small.fuse = { into: big, w: 0, age: 0 };
+          sim.pairs.delete(key);
+          sim.stats.fusions++;
+          if (a.fuse) break;
+          continue;
+        }
+
+        // unfused: keep them apart, deflecting sideways so they slide past
+        const limit = contact * SQUISH;
+        if (d < limit) {
+          const corr = (limit - d) * 0.5 * Math.min(1, dt * 8);
+          const hl = Math.hypot(nx, nz);
+          let lx = Math.cos(pair.side), lz = Math.sin(pair.side);
+          if (hl > 1e-3) { lx = nx / hl; lz = nz / hl; }
+          const lat = Math.max(0, 0.7 - hl) * 1.2;
+          a.x -= (nx + lx * lat) * corr; a.y -= ny * corr; a.z -= (nz + lz * lat) * corr;
+          c.x += (nx + lx * lat) * corr; c.y += ny * corr; c.z += (nz + lz * lat) * corr;
+          const rel = (c.vx - a.vx) * nx + (c.vy - a.vy) * ny + (c.vz - a.vz) * nz;
+          if (rel < 0) {
+            a.vx += nx * rel * 0.5; a.vy += ny * rel * 0.5; a.vz += nz * rel * 0.5;
+            c.vx -= nx * rel * 0.5; c.vy -= ny * rel * 0.5; c.vz -= nz * rel * 0.5;
           }
+        }
+      }
+    }
+    for (const [k, p] of sim.pairs) {
+      // an encounter keeps its temperament until the two have been apart a while
+      if (!p.touch) { p.prog = Math.max(0, p.prog - dt * 0.3); p.apart += dt; }
+      if (p.apart > 2 || !p.a.active || !p.c.active || p.a.fuse || p.c.fuse) {
+        if (p.a.active && p.c.active && !p.a.fuse && !p.c.fuse) sim.stats.slid = (sim.stats.slid || 0) + 1;
+        sim.pairs.delete(k);
+      }
+    }
+
+    // pinching off
+    for (const p of blobs) {
+      if (!p.active || p.state !== 'free' || p.fuse || p.split || p.mass < 2 || p.base < 0.12) continue;
+      if (Math.random() < dt * 0.06) {
+        const o = blobs.find(x => !x.active);
+        if (o) startSplit(o, p);
+      }
+    }
+    for (const b of blobs) {
+      if (!b.active || !b.split) continue;
+      const p = b.split.from;
+      if (!p.active) { b.split = null; continue; }
+      const sp = b.split;
+      sp.age += dt;
+      if (sp.age < 1.5) {
+        const dv = Math.min(sp.vol * dt / 1.5, Math.max(0, p.base ** 3 - 0.06 ** 3));
+        p.base = p.goal = Math.cbrt(p.base ** 3 - dv);
+        b.base = b.goal = Math.cbrt(b.base ** 3 + dv);
+      }
+      sp.w = 1 - smooth(1.0, 3.2, sp.age);
+      if (sp.age > 3.2) {
+        b.split = null;
+        b.coolWith = p;
+        b.coolUntil = sim.t + 8;
+      }
+    }
+
+    // fusing: a neck forms, then the smaller blob drains into the larger
+    for (const b of blobs) {
+      if (!b.active || !b.fuse) continue;
+      const a = rootOf(b.fuse.into);
+      b.fuse.into = a;
+      b.fuse.age += dt;
+      b.fuse.w = Math.min(1, b.fuse.w + dt / 0.7);
+      const pull = Math.min(1, dt * 0.9);
+      b.x += (a.x - b.x) * pull; b.y += (a.y - b.y) * pull; b.z += (a.z - b.z) * pull;
+      b.vx = a.vx; b.vy = a.vy; b.vz = a.vz;
+      const mt = (a.temp - b.temp) * Math.min(1, dt * 1.5);
+      b.temp += mt; a.temp -= mt * 0.3;
+      b.r = b.base * S.size;
+      if (b.fuse.age > 0.5) {
+        const vb = b.base ** 3;
+        const dv = Math.min(vb, Math.max(vb, 0.0003) * dt * 0.9);
+        b.base = b.goal = Math.cbrt(vb - dv);
+        a.base = Math.min(MAX_BASE, Math.cbrt(a.base ** 3 + dv));
+        a.goal = a.base;
+        if (b.base < 0.035) {
+          a.base = Math.min(MAX_BASE, Math.cbrt(a.base ** 3 + b.base ** 3));
+          a.goal = a.base;
+          a.mass += b.mass;
+          a.cap = Math.min(2.2, a.cap * 1.1);
+          b.active = false;
+          b.fuse = null;
+          for (const o of blobs) if (o.fuse && o.fuse.into === b) o.fuse.into = a;
         }
       }
     }
 
     for (const b of blobs) {
+      if (!b.active) continue;
       // landing / docking
       const ry = poolY() - b.r * 0.55;
       if (b.state === 'free' && b.y <= poolY() - b.r * 0.2 && b.vy < 0) {
@@ -802,6 +1006,15 @@ void main() {
         b.state = 'pool';
         b.cap = rand(0.5, 1.8);
         b.rise = rand(0.68, 0.8);
+        // merged wax melts back into the pool and buds off as separate blobs again
+        if (b.mass > 1) {
+          for (const o of blobs) {
+            if (b.mass <= 1) break;
+            if (!o.active) { respawn(o, b); b.mass--; }
+          }
+          b.mass = 1;
+          b.goal = newBase();
+        }
       }
       const ty = topY(b);
       if (b.state === 'free' && b.y >= ty - 0.01 && b.vy > 0) b.state = 'top';
@@ -822,6 +1035,13 @@ void main() {
                : b.state === 'top' ? 0.86 : 0.95;
       b.s += (sT - b.s) * (1 - Math.exp(-dt * 2));
     }
+  }
+
+  // Shader order: pool blobs, then free blobs grouped so a fusing blob follows the blob it joins.
+  function renderList() {
+    const list = sim.blobs.filter(b => b.active);
+    const key = b => b.state === 'pool' ? -1 : clusterId(b) + (b.fuse || b.split ? 0.5 : 0);
+    return list.sort((a, b) => key(a) - key(b));
   }
   // SIM-END -----------------------------------------------------------------
 
@@ -867,12 +1087,12 @@ void main() {
   gl.vertexAttribPointer(aLoc, 2, gl.FLOAT, false, 0, 0);
 
   const U = {};
-  for (const n of ['uRes', 'uRegion', 'uTime', 'uRot', 'uPitch', 'uZoom', 'uBlobs', 'uStretch', 'uCount',
+  for (const n of ['uRes', 'uRegion', 'uTime', 'uRot', 'uPitch', 'uZoom', 'uBlobs', 'uInfo', 'uCount',
                    'uWax', 'uLiquid', 'uGlow', 'uMetal', 'uRough', 'uHaze', 'uBulb', 'uGoo', 'uPoolY', 'uEta']) {
     U[n] = gl.getUniformLocation(prog, n);
   }
   const blobData = new Float32Array(MAXB * 4);
-  const stretchData = new Float32Array(MAXB);
+  const infoData = new Float32Array(MAXB * 4);
 
   const hexToLinear = hex => {
     const n = parseInt(hex.slice(1), 16);
@@ -968,12 +1188,12 @@ void main() {
     const free = Math.min(vh, Math.max(vh * 0.36, panel.getBoundingClientRect().top));
     cue.style.opacity = Math.max(0, 1 - window.scrollY / 120) * 0.55;
 
-    const blobs = sim.blobs;
+    const blobs = renderList();
     const n = Math.min(blobs.length, MAXB);
     for (let i = 0; i < n; i++) {
       const b = blobs[i];
       blobData.set([b.x, b.y, b.z, b.r], i * 4);
-      stretchData[i] = b.s;
+      infoData.set([b.s, b.state === 'pool' ? 1 : 0, clusterId(b), blend(b)], i * 4);
     }
 
     const wax = hexToLinear(S.wax), liquid = hexToLinear(S.liquid);
@@ -987,7 +1207,7 @@ void main() {
     gl.uniform1f(U.uPitch, view.pitch);
     gl.uniform1f(U.uZoom, S.zoom);
     gl.uniform4fv(U.uBlobs, blobData);
-    gl.uniform1fv(U.uStretch, stretchData);
+    gl.uniform4fv(U.uInfo, infoData);
     gl.uniform1i(U.uCount, n);
     gl.uniform3fv(U.uWax, wax);
     gl.uniform3fv(U.uLiquid, liquid);
